@@ -1,6 +1,6 @@
 from setuptools import setup, find_packages
 
-import cytostd_core as meta
+import chainforms as meta
 
 
 def long_description():
