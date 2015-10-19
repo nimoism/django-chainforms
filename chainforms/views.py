@@ -205,7 +205,7 @@ class ChainWizardView(WizardView):
         # response. This is needed to prevent from rendering done with the
         # same data twice.
         done_response = self.done(final_forms.values(), form_dict=final_forms, **kwargs)
-        self.storage.reset()
+        # self.storage.reset()
         return done_response
 
     def has_next_sub_step(self, step, form):
