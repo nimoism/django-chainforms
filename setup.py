@@ -9,7 +9,7 @@ def long_description():
         return rst
 
 setup(
-    name='python-chainforms',
+    name='django-chainforms',
     version=meta.__version__,
     description=meta.__doc__,
     author=meta.__author__,
