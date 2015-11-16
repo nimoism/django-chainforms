@@ -227,12 +227,18 @@ class ChainWizardView(WizardView):
         if step is None:
             step = self.steps.current
         top_step, sub_step = self.step_parts(step)
+        has_prev_step = True
         if int(sub_step) > 0:
             sub_step = unicode(int(sub_step) - 1)
         elif int(top_step) > 0:
             top_step = unicode(int(top_step) - 1)
             sub_step = u'0'
-        prev_step = u'%s_%s' % (top_step, sub_step)
+        else:
+            has_prev_step = False
+        if has_prev_step:
+            prev_step = u'%s_%s' % (top_step, sub_step)
+        else:
+            prev_step = None
         return prev_step
 
     @classmethod
