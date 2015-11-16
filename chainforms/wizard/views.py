@@ -1,12 +1,12 @@
 from collections import OrderedDict
-import re
 from django import forms
 from django.core.exceptions import ValidationError
-from django.views.generic.base import TemplateView
 from django.utils.translation import ugettext as _
+from django.views.generic import TemplateView
 from formtools.wizard.forms import ManagementForm
 from formtools.wizard.storage import get_storage
 from formtools.wizard.views import WizardView, StepsHelper
+
 from chainforms.forms import ChainForm
 
 
@@ -14,8 +14,7 @@ class ChainWizardView(WizardView):
     prefix = None
     storage = None
     steps = None
-
-    step_re = re.compile(r'^(\d+)(_(\d+))?$')
+    step_parts_separator = '__'
 
     def dispatch(self, request, *args, **kwargs):
         self.prefix = self.get_prefix(request, *args, **kwargs)
@@ -58,8 +57,9 @@ class ChainWizardView(WizardView):
         # contains a valid step name. If one was found, render the requested
         # form. (This makes stepping back a lot easier).
         wizard_goto_step = self.request.POST.get('wizard_goto_step', None)
-        if wizard_goto_step and wizard_goto_step in self.get_form_list():
-            return self.render_goto_step(wizard_goto_step)
+        goto_step_response = self.goto_step(wizard_goto_step)
+        if goto_step_response:
+            return goto_step_response
 
         # Check if form was refreshed
         management_form = ManagementForm(self.request.POST, prefix=self.prefix)
@@ -90,12 +90,35 @@ class ChainWizardView(WizardView):
                 return self.render_done(form, **kwargs)
         return self.render(form)
 
+    def process_step(self, form):
+        step_data = super(ChainWizardView, self).process_step(form)
+        storage_step_data = self.storage.get_step_data(self.steps.current)
+        storage_form = self.get_form(data=storage_step_data)
+        if storage_form.is_valid() and storage_form.is_valid():
+            if form.cleaned_data != storage_form.cleaned_data:
+                self.reset_next_steps(self.steps.current)
+        return step_data
+
+    def goto_step(self, goto_step):
+        if goto_step is None:
+            return None
+        top_step, sub_step = self.step_parts(goto_step)
+        if top_step is not None and top_step in self.get_form_list():
+            return self.render_goto_step(goto_step)
+
+    def generate_step(self, top_step, sub_step):
+        step = u'%(top_step)s%(separator)s%(sub_step)s' % {
+            'top_step': top_step,
+            'separator': self.step_parts_separator,
+            'sub_step': sub_step}
+        return step
+
     def normalize_step(self, step):
         top_step, sub_step = self.step_parts(step)
         if self.is_chain_step(step):
             if sub_step is None:
                 sub_step = u'0'
-                step = u'%s_%s' % (top_step, sub_step)
+                step = self.generate_step(top_step, sub_step)
         else:
             step = top_step
         return step
@@ -218,9 +241,9 @@ class ChainWizardView(WizardView):
         if next_sub_step:
             sub_step = unicode(int(sub_step) + 1)
         else:
-            top_step = unicode(int(top_step) + 1)
+            top_step = super(ChainWizardView, self).get_next_step(top_step)
             sub_step = u'0'
-        next_step = u'%s_%s' % (top_step, sub_step)
+        next_step = self.generate_step(top_step, sub_step)
         return next_step
 
     def get_prev_step(self, step=None):
@@ -231,25 +254,55 @@ class ChainWizardView(WizardView):
         if int(sub_step) > 0:
             sub_step = unicode(int(sub_step) - 1)
         elif int(top_step) > 0:
-            top_step = unicode(int(top_step) - 1)
+            top_step = super(ChainWizardView, self).get_prev_step(top_step)
             sub_step = u'0'
         else:
             has_prev_step = False
         if has_prev_step:
-            prev_step = u'%s_%s' % (top_step, sub_step)
+            prev_step = self.generate_step(top_step, sub_step)
         else:
             prev_step = None
         return prev_step
 
     @classmethod
     def step_parts(cls, step):
-        match = cls.step_re.match(step)
-        if not match:
-            raise AttributeError("Invalid step attribute")
-        top_step = match.group(1)
-        sub_step = match.group(3)
+        step_parts = step.rsplit(cls.step_parts_separator, 1)
+        error = AttributeError("Invalid step attribute: %s" % step)
+        if len(step_parts) == 2:
+            top_step, sub_step = step_parts
+            try:
+                int(sub_step)
+            except ValueError:
+                raise error
+        elif len(step_parts) == 1:
+            top_step, sub_step = step_parts[0], None
+            if not top_step:
+                raise error
+        else:
+            raise error
         return top_step, sub_step
 
     def get_form_class(self, step):
         top_step, sub_step = self.step_parts(step)
         return self.get_form_list().get(top_step)
+
+    def next_steps(self, step, include_self=False, sub_steps_only=True):
+        next_steps = []
+        if include_self:
+            next_steps.append(step)
+        next_step = step
+        while True:
+            next_step = self.get_next_step(next_step, next_sub_step=True)
+            next_data = self.storage.get_step_data(next_step)
+            if next_data is None and not sub_steps_only:
+                next_step = self.get_next_step(step, next_sub_step=False)
+                next_data = self.storage.get_step_data(next_step)
+            if next_data is None:
+                break
+            next_steps.append(next_step)
+        return next_steps
+
+    def reset_next_steps(self, step, include_self=False, sub_steps_only=True):
+        next_steps = self.next_steps(step, include_self=include_self, sub_steps_only=sub_steps_only)
+        for next_step in next_steps:
+            self.storage.delete_step_data(next_step)
