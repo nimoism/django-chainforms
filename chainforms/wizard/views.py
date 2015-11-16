@@ -253,7 +253,7 @@ class ChainWizardView(WizardView):
         has_prev_step = True
         if int(sub_step) > 0:
             sub_step = unicode(int(sub_step) - 1)
-        elif int(top_step) > 0:
+        elif list(self.get_form_list().keys()).index(top_step) > 0:
             top_step = super(ChainWizardView, self).get_prev_step(top_step)
             sub_step = u'0'
         else:
