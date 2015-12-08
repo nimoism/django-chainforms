@@ -78,23 +78,33 @@ class ChainWizardView(WizardView):
         step = self.storage.current_step
         form = self.get_form(step=step, data=self.request.POST, files=self.request.FILES)
         # and try to validate
-        if form.is_valid():
-            # if the form is valid, store the cleaned data and files.
-            self.storage.set_step_data(step, self.process_step(form))
-            self.storage.set_step_files(step, self.process_step_files(form))
+        if self.form_is_valid(form):
+            return self.form_valid(form, step, **kwargs)
+        else:
+            return self.form_invalid(form)
 
-            # check if the current step is the last step
-            if self.has_next_step(step) or self.has_next_sub_step(step, form):
-                return self.render_next_step(form)
-            else:
-                return self.render_done(form, **kwargs)
+    def form_is_valid(self, form):
+        return form.is_valid()
+
+    def form_valid(self, form, step, **kwargs):
+        # if the form is valid, store the cleaned data and files.
+        self.storage.set_step_data(step, self.process_step(form))
+        self.storage.set_step_files(step, self.process_step_files(form))
+
+        # check if the current step is the last step
+        if self.has_next_step(step) or self.has_next_sub_step(step, form):
+            return self.render_next_step(form)
+        else:
+            return self.render_done(form, **kwargs)
+
+    def form_invalid(self, form):
         return self.render(form)
 
     def process_step(self, form):
         step_data = super(ChainWizardView, self).process_step(form)
         storage_step_data = self.storage.get_step_data(self.steps.current)
         storage_form = self.get_form(data=storage_step_data)
-        if storage_form.is_valid() and storage_form.is_valid():
+        if storage_form.is_valid() and form.is_valid():
             if form.cleaned_data != storage_form.cleaned_data:
                 self.reset_next_steps(self.steps.current)
         return step_data
@@ -251,11 +261,20 @@ class ChainWizardView(WizardView):
             step = self.steps.current
         top_step, sub_step = self.step_parts(step)
         has_prev_step = True
-        if int(sub_step) > 0:
+        if sub_step is not None and int(sub_step) > 0:
             sub_step = unicode(int(sub_step) - 1)
         elif list(self.get_form_list().keys()).index(top_step) > 0:
             top_step = super(ChainWizardView, self).get_prev_step(top_step)
-            sub_step = u'0'
+            if self.is_chain_step(top_step):
+                data_steps = self.storage.data[self.storage.step_data_key].keys()
+                data_sub_steps = []
+                for data_step in data_steps:
+                    if data_step.startswith(top_step):
+                        data_top_step, data_sub_step = self.step_parts(data_step)
+                        data_sub_steps.append(data_sub_step)
+                sub_step = max(data_sub_steps)
+            else:
+                sub_step = u'0'
         else:
             has_prev_step = False
         if has_prev_step:
