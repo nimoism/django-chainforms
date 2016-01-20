@@ -325,3 +325,10 @@ class ChainWizardView(WizardView):
         next_steps = self.next_steps(step, include_self=include_self, sub_steps_only=sub_steps_only)
         for next_step in next_steps:
             self.storage.delete_step_data(next_step)
+
+    def get_template_names(self):
+        if hasattr(self, 'templates'):
+            top_step, sub_step = self.step_parts(self.steps.current)
+            return [self.templates[top_step]]
+        else:
+            super(ChainWizardView, self).get_template_names()
